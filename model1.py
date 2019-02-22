@@ -15,6 +15,7 @@ class AttnVGG_before(nn.Module):
     def __init__(self, num_classes, attention=True, normalize_attn=True, init='default'):
         super(AttnVGG_before, self).__init__()
         self.attention = attention
+        self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
         # conv blocks
         self.conv_block1 = ConvBlock(3, 64, 2)
         self.conv_block2 = ConvBlock(64, 128, 2)
@@ -23,9 +24,11 @@ class AttnVGG_before(nn.Module):
         self.conv_block5 = ConvBlock(512, 512, 3)
         #         self.conv_block6 = ConvBlock(512, 512, 2, pool=True)
         #         self.dense = nn.Conv2d(in_channels=512, out_channels=512, kernel_size=int(im_size/32), padding=0, bias=True)
-        self.dense1 = nn.Conv2d(in_channels=512, out_channels=4096, kernel_size=7, padding=0, bias=True)
-        self.dense2 = nn.Conv2d(in_channels=4096, out_channels=4096, kernel_size=1, padding=0, bias=True)
-        self.dense3 = nn.Conv2d(in_channels=4096, out_channels=512, kernel_size=1, padding=0, bias=True)
+#         self.dense1 = nn.Conv2d(in_channels=512, out_channels=4096, kernel_size=7, padding=0, bias=True)
+#         self.dense2 = nn.Conv2d(in_channels=4096, out_channels=4096, kernel_size=1, padding=0, bias=True)
+        self.dense1= nn.Linear(in_features=512 * 7*7, out_features=4096, bias=True)
+        self.dense2= nn.Linear(in_features=4096, out_features=4096, bias=True)
+        self.dense3 = nn.Linear(in_features=4096, out_features=512, bias=True)
 
         # Projectors & Compatibility functions
         if self.attention:
@@ -74,11 +77,16 @@ class AttnVGG_before(nn.Module):
         l3 = self.conv_block5(x)  # /4
         x = F.max_pool2d(l3, kernel_size=2, stride=2, padding=0)  # /8
         #         x = self.conv_block6(x) # /32
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+
         f1 = self.dense1(x)  # batch_sizex512x1x1
         f2 = self.dense2(f1)
         g = self.dense3(f2)
+        #g=f2
         # pay attention
         if self.attention:
+            g=g.unsqueeze(2).unsqueeze(3)
             c1, g1 = self.attn1(self.projector(l1), g)
             c2, g2 = self.attn2(l2, g)
             c3, g3 = self.attn3(l3, g)
@@ -148,14 +156,24 @@ class AttnVGG_before(nn.Module):
 
         l1 = model.classifier[0]
         l2 = self.dense1
-        if isinstance(l1, nn.Linear) and isinstance(l2, nn.Conv2d):
-            l2.weight.data = l1.weight.reshape(l2.weight.shape).data
+        if isinstance(l1, nn.Linear) and isinstance(l2, nn.Linear):
+            #l2.weight.data = l1.weight.reshape(l2.weight.shape).data
+            l2.weight.data = l1.weight.data
             l2.bias.data = l1.bias.data
 
         l1 = model.classifier[3]
         l2 = self.dense2
-        if isinstance(l1, nn.Linear) and isinstance(l2, nn.Conv2d):
-            l2.weight.data = l1.weight.reshape(l2.weight.shape).data
+        if isinstance(l1, nn.Linear) and isinstance(l2, nn.Linear):
+            #l2.weight.data = l1.weight.reshape(l2.weight.shape).data
+            l2.weight.data = l1.weight.data
             l2.bias.data = l1.bias.data
+
+
+        # l1 = model.classifier[6]
+        # l2 = self.classify
+        # if isinstance(l1, nn.Linear) and isinstance(l2, nn.Linear):
+        #     #l2.weight.data = l1.weight.reshape(l2.weight.shape).data
+        #     l2.weight.data = l1.weight.data
+        #     l2.bias.data = l1.bias.data
 
 
