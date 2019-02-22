@@ -139,6 +139,10 @@ def main_worker(gpu, ngpus_per_node, args):
         #model = models.__dict__[args.arch]()
         print("Creating Attn Model")
         model = AttnVGG_before(num_classes=1000, attention=True, normalize_attn=True)
+        model.copy_weights_vgg16()
+
+
+    print(model)
 
     if args.distributed:
         # For multiprocessing distributed, DistributedDataParallel constructor

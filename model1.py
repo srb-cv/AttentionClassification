@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from blocks import ConvBlock, LinearAttentionBlock, ProjectorBlock
 from initialize import *
+from torchvision import models
+import torch.nn as nn
 
 '''
 attention before max-pooling
@@ -87,4 +89,73 @@ class AttnVGG_before(nn.Module):
             c1, c2, c3 = None, None, None
             x = self.classify(torch.squeeze(g))
         return [x, c1, c2, c3]
-        #return x
+
+
+    def copy_weights_vgg16(self):
+
+        model = models.vgg16_bn(pretrained=True)
+
+        for l1, l2 in zip(model.features[:6], self.conv_block1.op):
+            if isinstance(l1, nn.Conv2d) and isinstance(l2, nn.Conv2d):
+                # print(l1,l2)
+                l2.weight.data = l1.weight.data
+                l2.bias.data = l1.bias.data
+            elif isinstance(l1, nn.BatchNorm2d) and isinstance(l2, nn.BatchNorm2d):
+                l2.weight.data = l1.weight.data
+                l2.bias.data = l1.bias.data
+                l2.running_mean.data = l1.running_mean.data
+                l2.running_var.data = l1.running_var.data
+
+        for l1, l2 in zip(model.features[7:13], self.conv_block2.op):
+            if isinstance(l1, nn.Conv2d) and isinstance(l2, nn.Conv2d):
+                l2.weight.data = l1.weight.data
+                l2.bias.data = l1.bias.data
+            elif isinstance(l1, nn.BatchNorm2d) and isinstance(l2, nn.BatchNorm2d):
+                l2.weight.data = l1.weight.data
+                l2.bias.data = l1.bias.data
+                l2.running_mean.data = l1.running_mean.data
+                l2.running_var.data = l1.running_var.data
+
+        for l1, l2 in zip(model.features[14:23], self.conv_block3.op):
+            if isinstance(l1, nn.Conv2d) and isinstance(l2, nn.Conv2d):
+                l2.weight.data = l1.weight.data
+                l2.bias.data = l1.bias.data
+            elif isinstance(l1, nn.BatchNorm2d) and isinstance(l2, nn.BatchNorm2d):
+                l2.weight.data = l1.weight.data
+                l2.bias.data = l1.bias.data
+                l2.running_mean.data = l1.running_mean.data
+                l2.running_var.data = l1.running_var.data
+
+        for l1, l2 in zip(model.features[24:33], self.conv_block4.op):
+            if isinstance(l1, nn.Conv2d) and isinstance(l2, nn.Conv2d):
+                l2.weight.data = l1.weight.data
+                l2.bias.data = l1.bias.data
+            elif isinstance(l1, nn.BatchNorm2d) and isinstance(l2, nn.BatchNorm2d):
+                l2.weight.data = l1.weight.data
+                l2.bias.data = l1.bias.data
+                l2.running_mean.data = l1.running_mean.data
+                l2.running_var.data = l1.running_var.data
+
+        for l1, l2 in zip(model.features[34:43], self.conv_block5.op):
+            if isinstance(l1, nn.Conv2d) and isinstance(l2, nn.Conv2d):
+                l2.weight.data = l1.weight.data
+                l2.bias.data = l1.bias.data
+            elif isinstance(l1, nn.BatchNorm2d) and isinstance(l2, nn.BatchNorm2d):
+                l2.weight.data = l1.weight.data
+                l2.bias.data = l1.bias.data
+                l2.running_mean.data = l1.running_mean.data
+                l2.running_var.data = l1.running_var.data
+
+        l1 = model.classifier[0]
+        l2 = self.dense1
+        if isinstance(l1, nn.Linear) and isinstance(l2, nn.Conv2d):
+            l2.weight.data = l1.weight.reshape(l2.weight.shape).data
+            l2.bias.data = l1.bias.data
+
+        l1 = model.classifier[3]
+        l2 = self.dense2
+        if isinstance(l1, nn.Linear) and isinstance(l2, nn.Conv2d):
+            l2.weight.data = l1.weight.reshape(l2.weight.shape).data
+            l2.bias.data = l1.bias.data
+
+
