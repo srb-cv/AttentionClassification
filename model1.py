@@ -28,6 +28,8 @@ class AttnVGG_before(nn.Module):
 #         self.dense2 = nn.Conv2d(in_channels=4096, out_channels=4096, kernel_size=1, padding=0, bias=True)
         self.dense1= nn.Linear(in_features=512 * 7*7, out_features=4096, bias=True)
         self.dense2= nn.Linear(in_features=4096, out_features=4096, bias=True)
+        for param in self.parameters():
+            param.requires_grad = False
         self.dense3 = nn.Linear(in_features=4096, out_features=512, bias=True)
 
         # Projectors & Compatibility functions
