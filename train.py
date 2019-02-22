@@ -10,7 +10,7 @@ import torch.optim.lr_scheduler as lr_scheduler
 import torchvision
 import torchvision.utils as utils
 import torchvision.transforms as transforms
-from model1 import AttnVGG_before
+from model1_bkp import AttnVGG_before
 from model2 import AttnVGG_after
 from utilities import *
 
