@@ -19,6 +19,9 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
 from model1 import AttnVGG_before
+import datasets as our_datasets
+from datasets.transformation import augmentation, conversion
+
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -32,7 +35,7 @@ parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet18',
                     help='model architecture: ' +
                         ' | '.join(model_names) +
                         ' (default: resnet18)')
-parser.add_argument('-j', '--workers', default=6, type=int, metavar='N',
+parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 parser.add_argument('--epochs', default=90, type=int, metavar='N',
                     help='number of total epochs to run')
@@ -139,7 +142,7 @@ def main_worker(gpu, ngpus_per_node, args):
         #print("=> creating model '{}'".format(args.arch))
         #model = models.__dict__[args.arch]()
         print("Creating Attn Model")
-        model = AttnVGG_before(num_classes=args.num_classes, attention=True, normalize_attn=True)
+        model = AttnVGG_before(num_classes=args.num_classes, attention=False, normalize_attn=False)
         model.copy_weights_vgg16()
 
 
@@ -203,14 +206,26 @@ def main_worker(gpu, ngpus_per_node, args):
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
-    train_dataset = datasets.ImageFolder(
-        traindir,
-        transforms.Compose([
-            transforms.RandomResizedCrop(224),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize,
-        ]))
+    # train_dataset = datasets.ImageFolder(
+    #     traindir,
+    #     transforms.Compose([
+    #         transforms.RandomResizedCrop(224),
+    #         transforms.RandomHorizontalFlip(),
+    #         transforms.ToTensor(),
+    #         normalize,
+    #     ]))
+    preprocess_imgs_train = [
+        #augmentation.DownScale(target_resolution=(224, 224)), # width, height
+        augmentation.DownScale(target_resolution=(168, 200)),  # width, height
+        conversion.ToFloat(),
+        conversion.TransposeImage(),
+        conversion.ToTensor()
+    ]
+
+    train_dataset = our_datasets.CDIP("/scratch/Datasets/rvl-cdip/", mode="train", channels=3,
+                                      exclude_tobacco=True, preprocess=preprocess_imgs_train)
+
+
 
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
@@ -221,15 +236,26 @@ def main_worker(gpu, ngpus_per_node, args):
         train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
         num_workers=args.workers, pin_memory=True, sampler=train_sampler)
 
+    val_dataset = our_datasets.CDIP("/scratch/Datasets/rvl-cdip/", mode="val", channels=3,
+                                      exclude_tobacco=True, preprocess=preprocess_imgs_train)
+
+
+
+    # val_loader = torch.utils.data.DataLoader(
+    #     datasets.ImageFolder(valdir, transforms.Compose([
+    #         transforms.Resize(256),
+    #         transforms.CenterCrop(224),
+    #         transforms.ToTensor(),
+    #         normalize,
+    #     ])),
+    #     batch_size=args.batch_size, shuffle=False,
+    #     num_workers=args.workers, pin_memory=True)
+
     val_loader = torch.utils.data.DataLoader(
-        datasets.ImageFolder(valdir, transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            normalize,
-        ])),
+        val_dataset,
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
+
 
     if args.evaluate:
         validate(val_loader, model, criterion, args)
@@ -282,7 +308,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 
         # compute output
         output,_,_,_ = model(input)
-        loss = criterion(output, target)
+        loss = criterion(output, target.squeeze())
 
         # measure accuracy and record loss
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
@@ -309,8 +335,12 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
                    epoch, i, len(train_loader), batch_time=batch_time,
                    data_time=data_time, loss=losses, top1=top1, top5=top5))
 
+        if(i==1590):
+            break
+
 
 def validate(val_loader, model, criterion, args):
+    print("Valididating")
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
@@ -328,7 +358,7 @@ def validate(val_loader, model, criterion, args):
 
             # compute output
             output,_,_,_ = model(input)
-            loss = criterion(output, target)
+            loss = criterion(output, target.squeeze())
 
             # measure accuracy and record loss
             acc1, acc5 = accuracy(output, target, topk=(1, 5))

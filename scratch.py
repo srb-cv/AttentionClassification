@@ -10,28 +10,20 @@ import torch
 import torch.nn as nn
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
-import torch.distributed as dist
-import torch.optim
-import torch.multiprocessing as mp
-import torch.utils.data
-import torch.utils.data.distributed
-import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-import torchvision.models as models
-from model1 import AttnVGG_before
 
-model_names = sorted(name for name in models.__dict__
-    if name.islower() and not name.startswith("__")
-    and callable(models.__dict__[name]))
+from model1 import AttnVGG_before
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from collections import OrderedDict
+from zoo.loaddata import  LoadData
+import os
+from torch.utils.data import DataLoader
+
+
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
-parser.add_argument('data', metavar='DIR',
-                    help='path to dataset')
-parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet18',
-                    choices=model_names,
-                    help='model architecture: ' +
-                        ' | '.join(model_names) +
-                        ' (default: resnet18)')
+
 parser.add_argument('-j', '--workers', default=6, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 parser.add_argument('--epochs', default=90, type=int, metavar='N',
@@ -75,104 +67,82 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
                          'N processes per node, which has N GPUs. This is the '
                          'fastest way to use PyTorch for either single node or '
                          'multi node data parallel training')
-parser.add_argument('--num_classes',default=1000, type=int, help='num of class in the model')
+parser.add_argument('--num_classes',default=10, type=int, help='num of class in the model')
 
 best_acc1 = 0
 
 
-def main():
-    args = parser.parse_args()
-
-    if args.seed is not None:
-        random.seed(args.seed)
-        torch.manual_seed(args.seed)
-        cudnn.deterministic = True
-        warnings.warn('You have chosen to seed training. '
-                      'This will turn on the CUDNN deterministic setting, '
-                      'which can slow down your training considerably! '
-                      'You may see unexpected behavior when restarting '
-                      'from checkpoints.')
-
-    if args.gpu is not None:
-        warnings.warn('You have chosen a specific GPU. This will completely '
-                      'disable data parallelism.')
-
-    if args.dist_url == "env://" and args.world_size == -1:
-        args.world_size = int(os.environ["WORLD_SIZE"])
-
-    args.distributed = args.world_size > 1 or args.multiprocessing_distributed
-
-    ngpus_per_node = torch.cuda.device_count()
-    if args.multiprocessing_distributed:
-        # Since we have ngpus_per_node processes per node, the total world_size
-        # needs to be adjusted accordingly
-        args.world_size = ngpus_per_node * args.world_size
-        # Use torch.multiprocessing.spawn to launch distributed processes: the
-        # main_worker process function
-        mp.spawn(main_worker, nprocs=ngpus_per_node, args=(ngpus_per_node, args))
-    else:
-        # Simply call main_worker function
-        main_worker(args.gpu, ngpus_per_node, args)
 
 
-def main_worker(gpu, ngpus_per_node, args):
+
+
+def load_weight(model,path):
+
+    state_dict = torch.load(path)
+    new_dict = OrderedDict
+    print(state_dict['state_dict'])
+    # for k, v,_ in state_dict['state_dict']:
+    #     name = k[7:]
+    #     new_dict[name] = v
+    new_dict = {str.replace(k, 'module.', ''): v for k, v in state_dict[
+        'state_dict'].items()}
+    model.load_state_dict(new_dict)
+
+
+class MyEnsemble(nn.Module):
+    def __init__(self, model_header, model_footer):
+        super(MyEnsemble, self).__init__()
+        self.modelA = model_header
+        self.modelB = model_footer
+        self.classifier = nn.Linear(10*2, 10)
+
+    def forward(self, x1, x2):
+        x1 = self.modelA(x1)
+        x2 = self.modelB(x2)
+        print(x1.shape())
+        print(x2.shape())
+        x = torch.cat((x1, x2), dim=1)
+        x = self.classifier(F.relu(x))
+        return x
+
+
+
+
+
+def main(gpu, ngpus_per_node, args):
     global best_acc1
     args.gpu = gpu
 
     if args.gpu is not None:
         print("Use GPU: {} for training".format(args.gpu))
 
-    if args.distributed:
-        if args.dist_url == "env://" and args.rank == -1:
-            args.rank = int(os.environ["RANK"])
-        if args.multiprocessing_distributed:
-            # For multiprocessing distributed training, rank needs to be the
-            # global rank among all the processes
-            args.rank = args.rank * ngpus_per_node + gpu
-        dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
-                                world_size=args.world_size, rank=args.rank)
-    # create model
-    if args.pretrained:
-        print("=> using pre-trained model '{}'".format(args.arch))
-        model = models.__dict__[args.arch](pretrained=True)
-    else:
-        #print("=> creating model '{}'".format(args.arch))
-        #model = models.__dict__[args.arch]()
-        print("Creating Attn Model")
-        model = AttnVGG_before(num_classes=args.num_classes, attention=True, normalize_attn=True)
-        model.copy_weights_vgg16()
+    model_header = AttnVGG_before(num_classes=10)
+    model_footer = AttnVGG_before(num_classes=10)
 
+    load_weight(model_header, 'zoo/header_models/model_best.pth.tar')
+    load_weight(model_footer, 'zoo/footer_models/model_best.pth.tar')
+    model = MyEnsemble(model_header, model_footer)
 
-    print(model)
+    footer_path = '/scratch/Segregated/Footer'
+    header_path = '/scratch/Segregated/Header'
+    left_path = '/scratch/Segregated/Left'
+    right_path = '/scratch/Segregated/Right'
 
-    if args.distributed:
-        # For multiprocessing distributed, DistributedDataParallel constructor
-        # should always set the single device scope, otherwise,
-        # DistributedDataParallel will use all available devices.
-        if args.gpu is not None:
-            torch.cuda.set_device(args.gpu)
-            model.cuda(args.gpu)
-            # When using a single GPU per process and per
-            # DistributedDataParallel, we need to divide the batch size
-            # ourselves based on the total number of GPUs we have
-            args.batch_size = int(args.batch_size / ngpus_per_node)
-            args.workers = int(args.workers / ngpus_per_node)
-            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
-        else:
-            model.cuda()
-            # DistributedDataParallel will divide and allocate batch_size to all
-            # available GPUs if device_ids are not set
-            model = torch.nn.parallel.DistributedDataParallel(model)
-    elif args.gpu is not None:
-        torch.cuda.set_device(args.gpu)
-        model = model.cuda(args.gpu)
-    else:
-        # DataParallel will divide and allocate batch_size to all available GPUs
-        if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
-            model.features = torch.nn.DataParallel(model.features)
-            model.cuda()
-        else:
-            model = torch.nn.DataParallel(model).cuda()
+    train_footer_path = os.path.join(footer_path, 'train')
+    train_header_path = os.path.join(header_path, 'train')
+    train_left_path = os.path.join(left_path, 'train')
+    train_right_path = os.path.join(right_path, 'train')
+
+    train_dataset = LoadData(train_header_path, train_footer_path, train_left_path, train_right_path)
+    train_loader = DataLoader(train_dataset, 10, shuffle=False, num_workers=8, sampler=None)
+
+    val_footer_path = os.path.join(footer_path, 'val')
+    val_header_path = os.path.join(header_path, 'val')
+    val_left_path = os.path.join(left_path, 'val')
+    val_right_path = os.path.join(right_path, 'val')
+
+    val_dataset = LoadData(val_header_path, val_footer_path, val_left_path, val_right_path)
+    val_loader = DataLoader(val_dataset, 10, shuffle=False, num_workers=8)
 
     # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss().cuda(args.gpu)
@@ -197,47 +167,14 @@ def main_worker(gpu, ngpus_per_node, args):
 
     cudnn.benchmark = True
 
-    # Data loading code
-    traindir = os.path.join(args.data, 'train')
-    valdir = os.path.join(args.data, 'val')
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
-
-    train_dataset = datasets.ImageFolder(
-        traindir,
-        transforms.Compose([
-            transforms.RandomResizedCrop(224),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize,
-        ]))
-
-    if args.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-    else:
-        train_sampler = None
-
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
-        num_workers=args.workers, pin_memory=True, sampler=train_sampler)
-
-    val_loader = torch.utils.data.DataLoader(
-        datasets.ImageFolder(valdir, transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            normalize,
-        ])),
-        batch_size=args.batch_size, shuffle=False,
-        num_workers=args.workers, pin_memory=True)
-
     if args.evaluate:
         validate(val_loader, model, criterion, args)
         return
 
     for epoch in range(args.start_epoch, args.epochs):
-        if args.distributed:
-            train_sampler.set_epoch(epoch)
+
+        print("************Start Training***********************")
+
         adjust_learning_rate(optimizer, epoch, args)
 
         # train for one epoch
@@ -254,7 +191,6 @@ def main_worker(gpu, ngpus_per_node, args):
                 and args.rank % ngpus_per_node == 0):
             save_checkpoint({
                 'epoch': epoch + 1,
-                'arch': args.arch,
                 'state_dict': model.state_dict(),
                 'best_acc1': best_acc1,
                 'optimizer' : optimizer.state_dict(),
@@ -272,16 +208,19 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
     model.train()
 
     end = time.time()
-    for i, (input, target) in enumerate(train_loader):
+    for i, (header, footer, left, right , target) in enumerate(train_loader):
+
+        print("footer ",footer.shape)
         # measure data loading time
         data_time.update(time.time() - end)
 
         if args.gpu is not None:
-            input = input.cuda(args.gpu, non_blocking=True)
+            header = header.cuda(args.gpu, non_blocking=True)
+            footer = footer.cuda(args.gpu, non_blocking=True)
         target = target.cuda(args.gpu, non_blocking=True)
 
         # compute output
-        output,_,_,_ = model(input)
+        output = model(header, footer)
         loss = criterion(output, target)
 
         # measure accuracy and record loss
@@ -327,7 +266,7 @@ def validate(val_loader, model, criterion, args):
             target = target.cuda(args.gpu, non_blocking=True)
 
             # compute output
-            output,_,_,_ = model(input)
+            output = model(input)
             loss = criterion(output, target)
 
             # measure accuracy and record loss
@@ -353,6 +292,8 @@ def validate(val_loader, model, criterion, args):
               .format(top1=top1, top5=top5))
 
     return top1.avg
+
+
 
 
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
@@ -404,4 +345,5 @@ def accuracy(output, target, topk=(1,)):
 
 
 if __name__ == '__main__':
-    main()
+    args = parser.parse_args()
+    main(args=args, gpu=None, ngpus_per_node=1)
