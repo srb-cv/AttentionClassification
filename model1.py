@@ -124,10 +124,10 @@ class AttnVGG_before(nn.Module):
             x = self.classify(torch.squeeze(g))
         return [x, c1, c2, c3]
 
-    def copy_weights_vgg16(self):
+    def copy_weights_vgg16(self, model_path_to_copy_weigths):
         #model = models.vgg16_bn(pretrained=True)
-        model = vgg_512fc()
-        model = self.load_weight(model,"zoo/save_Model_Tobacco512fc/model_best.pth.tar")
+        model = vgg_512fc(num_classes=16)
+        model = self.load_weight(model, model_path_to_copy_weigths)
 
         for l1, l2 in zip(model.features[:6], self.conv_block1.op):
             if isinstance(l1, nn.Conv2d) and isinstance(l2, nn.Conv2d):

@@ -144,7 +144,7 @@ def main_worker(gpu, ngpus_per_node, args):
         # model = models.__dict__[args.arch]()
         print("Creating VGG Model with 512FC")
         #model = vgg_512fc()
-        model = AttnVGG_before(num_classes=args.num_classes, attention=True, normalize_attn=True)
+        model = AttnVGG_before(num_classes=args.num_classes, attention=True, normalize_attn=False)
         model.copy_weights_vgg16()
 
     if args.distributed:

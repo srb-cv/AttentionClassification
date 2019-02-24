@@ -80,9 +80,13 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
                          'N processes per node, which has N GPUs. This is the '
                          'fastest way to use PyTorch for either single node or '
                          'multi node data parallel training')
-parser.add_argument('--num_classes',default=1000, type=int, help='num of class in the model')
+parser.add_argument('--num_classes',default=16, type=int, help='num of class in the model')
+parser.add_argument('--train_attn', dest='train_attn', action='store_true',
+                    help='Train the model with Attn')
 
 best_acc1 = 0
+
+
 
 
 def main():
@@ -145,8 +149,14 @@ def main_worker(gpu, ngpus_per_node, args):
         # print("Creating Attn Model")
         # model = AttnVGG_before(num_classes=args.num_classes, attention=False, normalize_attn=False)
         # model.copy_weights_vgg16()
-        print("Creating VGG Model with 512FC")
-        model = vgg_512fc()
+        if args.train_attn:
+            model = AttnVGG_before(num_classes=args.num_classes, attention=True, normalize_attn=False)
+            model_path_to_copy_weigths = "zoo/Train_cdip_acc90_512fc/model_best.pth.tar"
+            model.copy_weights_vgg16(model_path_to_copy_weigths)
+
+        else:
+            print("Creating VGG Model with 512FC")
+            model = vgg_512fc(num_classes=16)
 
 
     print(model)
@@ -251,6 +261,14 @@ def main_worker(gpu, ngpus_per_node, args):
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
 
+    test_dataset = our_datasets.CDIP("/scratch/Datasets/rvl-cdip/", mode="test", channels=3,
+                                    exclude_tobacco=True, preprocess=preprocess_imgs_val)
+
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset,
+        batch_size=args.batch_size, shuffle=False,
+        num_workers=args.workers, pin_memory=True)
+
 
     if args.evaluate:
         validate(val_loader, model, criterion, args)
@@ -281,6 +299,9 @@ def main_worker(gpu, ngpus_per_node, args):
                 'optimizer' : optimizer.state_dict(),
             }, is_best)
 
+    test_acc = test(test_loader, model, criterion, args)
+    print("Average Test accuracy:", test_acc)
+
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
     batch_time = AverageMeter()
@@ -302,7 +323,10 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         target = target.cuda(args.gpu, non_blocking=True)
 
         # compute output
-        output = model(input)
+        if args.train_attn:
+            output,_,_,_ = model(input)
+        else:
+            output = model(input)
         loss = criterion(output, target.squeeze())
 
         # measure accuracy and record loss
@@ -352,7 +376,10 @@ def validate(val_loader, model, criterion, args):
             target = target.cuda(args.gpu, non_blocking=True)
 
             # compute output
-            output = model(input)
+            if args.train_attn:
+                output, _, _, _ = model(input)
+            else:
+                output = model(input)
             loss = criterion(output, target.squeeze())
 
             # measure accuracy and record loss
@@ -373,6 +400,55 @@ def validate(val_loader, model, criterion, args):
                       'Acc@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
                        i, len(val_loader), batch_time=batch_time, loss=losses,
                        top1=top1, top5=top5))
+
+        print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
+              .format(top1=top1, top5=top5))
+
+    return top1.avg
+
+
+def test(test_loader, model, criterion, args):
+
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    top1 = AverageMeter()
+    top5 = AverageMeter()
+
+    # switch to evaluate mode
+    model.eval()
+
+    with torch.no_grad():
+        end = time.time()
+        for i, (input, target) in enumerate(test_loader):
+            if args.gpu is not None:
+                input = input.cuda(args.gpu, non_blocking=True)
+            target = target.cuda(args.gpu, non_blocking=True)
+
+            # compute output
+            if args.train_attn:
+                output, _, _, _ = model(input)
+            else:
+                output = model(input)
+            loss = criterion(output, target.squeeze())
+
+            # measure accuracy and record loss
+            acc1, acc5 = accuracy(output, target, topk=(1, 5))
+            losses.update(loss.item(), input.size(0))
+            top1.update(acc1[0], input.size(0))
+            top5.update(acc5[0], input.size(0))
+
+            # measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
+
+            if i % args.print_freq == 0:
+                print('Test: [{0}/{1}]\t'
+                      'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                      'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                      'Acc@1 {top1.val:.3f} ({top1.avg:.3f})\t'
+                      'Acc@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
+                    i, len(test_loader), batch_time=batch_time, loss=losses,
+                    top1=top1, top5=top5))
 
         print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
               .format(top1=top1, top5=top5))
