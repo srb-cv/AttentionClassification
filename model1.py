@@ -5,9 +5,10 @@ from blocks import ConvBlock, LinearAttentionBlock, ProjectorBlock
 from initialize import *
 from torchvision import models
 import torch.nn as nn
-
+from Train_VGG import vgg_512fc
+from collections import OrderedDict
 '''
-attention before max-pooling
+attention after max-pooling
 '''
 
 
@@ -28,9 +29,11 @@ class AttnVGG_before(nn.Module):
 #         self.dense2 = nn.Conv2d(in_channels=4096, out_channels=4096, kernel_size=1, padding=0, bias=True)
         self.dense1= nn.Linear(in_features=512 * 7*7, out_features=4096, bias=True)
         self.dense2= nn.Linear(in_features=4096, out_features=4096, bias=True)
-        for param in self.parameters():
-            param.requires_grad = False
+        # for param in self.parameters():
+        #     param.requires_grad = False
+
         self.dense3 = nn.Linear(in_features=4096, out_features=512, bias=True)
+
 
         # Projectors & Compatibility functions
         if self.attention:
@@ -68,30 +71,51 @@ class AttnVGG_before(nn.Module):
 
     def forward(self, x):
         # feed forward
-        l4 = self.conv_block1(x)
-        x = F.max_pool2d(l4, kernel_size=2, stride=2, padding=0)  # /2
-        l5 = self.conv_block2(x)
-        x = F.max_pool2d(l5, kernel_size=2, stride=2, padding=0)  # /2
-        l1 = self.conv_block3(x)  # /1
-        x = F.max_pool2d(l1, kernel_size=2, stride=2, padding=0)  # /2
-        l2 = self.conv_block4(x)  # /2
-        x = F.max_pool2d(l2, kernel_size=2, stride=2, padding=0)  # /4
-        l3 = self.conv_block5(x)  # /4
-        x = F.max_pool2d(l3, kernel_size=2, stride=2, padding=0)  # /8
+        # l4 = self.conv_block1(x)
+        # x = F.max_pool2d(l4, kernel_size=2, stride=2, padding=0)  # /2
+        # l5 = self.conv_block2(x)
+        # x = F.max_pool2d(l5, kernel_size=2, stride=2, padding=0)  # /2
+        # l1 = self.conv_block3(x)  # /1
+        # x = F.max_pool2d(l1, kernel_size=2, stride=2, padding=0)  # /2
+        # l2 = self.conv_block4(x)  # /2
+        # x = F.max_pool2d(l2, kernel_size=2, stride=2, padding=0)  # /4
+        # l3 = self.conv_block5(x)  # /4
+        # x = F.max_pool2d(l3, kernel_size=2, stride=2, padding=0)  # /8
+        # #         x = self.conv_block6(x) # /32
+        # x = self.avgpool(x)
+        # x = x.view(x.size(0), -1)
+        #
+        # f1 = self.dense1(x)  # batch_sizex512x1x1
+        # f2 = self.dense2(f1)
+        # g = self.dense3(f2)
+        #g=f2
+
+        x = self.conv_block1(x)
+        l1 = F.max_pool2d(x, kernel_size=2, stride=2, padding=0)  # /2
+        x = self.conv_block2(l1)
+        l2 = F.max_pool2d(x, kernel_size=2, stride=2, padding=0)  # /2
+        x = self.conv_block3(l2)  # /1
+        l3 = F.max_pool2d(x, kernel_size=2, stride=2, padding=0)  # /2
+        x = self.conv_block4(l3)  # /2
+        l4 = F.max_pool2d(x, kernel_size=2, stride=2, padding=0)  # /4
+        x = self.conv_block5(l4)  # /4
+        l5 = F.max_pool2d(x, kernel_size=2, stride=2, padding=0)  # /8
         #         x = self.conv_block6(x) # /32
-        x = self.avgpool(x)
+        x = self.avgpool(l5)
         x = x.view(x.size(0), -1)
 
         f1 = self.dense1(x)  # batch_sizex512x1x1
         f2 = self.dense2(f1)
         g = self.dense3(f2)
-        #g=f2
+
+
+
         # pay attention
         if self.attention:
             g=g.unsqueeze(2).unsqueeze(3)
-            c1, g1 = self.attn1(self.projector(l1), g)
-            c2, g2 = self.attn2(l2, g)
-            c3, g3 = self.attn3(l3, g)
+            c1, g1 = self.attn1(self.projector(l3), g)
+            c2, g2 = self.attn2(l4, g)
+            c3, g3 = self.attn3(l5, g)
             g = torch.cat((g1, g2, g3), dim=1)  # batch_sizexC
             # classification layer
             x = self.classify(g)  # batch_sizexnum_classes
@@ -100,10 +124,10 @@ class AttnVGG_before(nn.Module):
             x = self.classify(torch.squeeze(g))
         return [x, c1, c2, c3]
 
-
     def copy_weights_vgg16(self):
-
-        model = models.vgg16_bn(pretrained=True)
+        #model = models.vgg16_bn(pretrained=True)
+        model = vgg_512fc()
+        model = self.load_weight(model,"zoo/save_Model_Tobacco512fc/model_best.pth.tar")
 
         for l1, l2 in zip(model.features[:6], self.conv_block1.op):
             if isinstance(l1, nn.Conv2d) and isinstance(l2, nn.Conv2d):
@@ -171,11 +195,23 @@ class AttnVGG_before(nn.Module):
             l2.bias.data = l1.bias.data
 
 
-        # l1 = model.classifier[6]
-        # l2 = self.classify
-        # if isinstance(l1, nn.Linear) and isinstance(l2, nn.Linear):
-        #     #l2.weight.data = l1.weight.reshape(l2.weight.shape).data
-        #     l2.weight.data = l1.weight.data
-        #     l2.bias.data = l1.bias.data
+        l1 = model.classifier[6]
+        l2 = self.dense3
+        if isinstance(l1, nn.Linear) and isinstance(l2, nn.Linear):
+            #l2.weight.data = l1.weight.reshape(l2.weight.shape).data
+            l2.weight.data = l1.weight.data
+            l2.bias.data = l1.bias.data
+
+    def load_weight(self, model, path):
+        state_dict = torch.load(path)
+        new_dict = OrderedDict
+        # print(state_dict['state_dict'])
+        # for k, v,_ in state_dict['state_dict']:
+        #     name = k[7:]
+        #     new_dict[name] = v
+        new_dict = {str.replace(k, 'module.', ''): v for k, v in state_dict[
+            'state_dict'].items()}
+        model.load_state_dict(new_dict)
+        return model
 
 

@@ -87,6 +87,7 @@ def load_weight(model,path):
     new_dict = {str.replace(k, 'module.', ''): v for k, v in state_dict[
         'state_dict'].items()}
     model.load_state_dict(new_dict)
+    return model
 
 
 class MyEnsemble(nn.Module):
@@ -119,8 +120,8 @@ def main(gpu, ngpus_per_node, args):
     model_header = AttnVGG_before(num_classes=10)
     model_footer = AttnVGG_before(num_classes=10)
 
-    load_weight(model_header, 'zoo/header_models/model_best.pth.tar')
-    load_weight(model_footer, 'zoo/footer_models/model_best.pth.tar')
+    model_header=load_weight(model_header, 'zoo/header_models/model_best.pth.tar')
+    model_footer=load_weight(model_footer, 'zoo/footer_models/model_best.pth.tar')
     model = MyEnsemble(model_header, model_footer)
 
     footer_path = '/scratch/Segregated/Footer'
