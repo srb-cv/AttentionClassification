@@ -21,6 +21,8 @@ import torchvision.models as models
 from model1 import AttnVGG_before
 import datasets as our_datasets
 from datasets.transformation import augmentation, conversion
+from Train_VGG import vgg_512fc
+from datasets import Tobacco
 
 
 model_names = sorted(name for name in models.__dict__
@@ -139,11 +141,12 @@ def main_worker(gpu, ngpus_per_node, args):
         print("=> using pre-trained model '{}'".format(args.arch))
         model = models.__dict__[args.arch](pretrained=True)
     else:
-        #print("=> creating model '{}'".format(args.arch))
-        #model = models.__dict__[args.arch]()
-        print("Creating Attn Model")
-        model = AttnVGG_before(num_classes=args.num_classes, attention=False, normalize_attn=False)
-        model.copy_weights_vgg16()
+
+        # print("Creating Attn Model")
+        # model = AttnVGG_before(num_classes=args.num_classes, attention=False, normalize_attn=False)
+        # model.copy_weights_vgg16()
+        print("Creating VGG Model with 512FC")
+        model = vgg_512fc()
 
 
     print(model)
@@ -200,23 +203,17 @@ def main_worker(gpu, ngpus_per_node, args):
 
     cudnn.benchmark = True
 
-    # Data loading code
-    traindir = os.path.join(args.data, 'train')
-    valdir = os.path.join(args.data, 'val')
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
+    # # Data loading code
+    # traindir = os.path.join(args.data, 'train')
+    # valdir = os.path.join(args.data, 'val')
+    # normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+    #                                  std=[0.229, 0.224, 0.225])
 
-    # train_dataset = datasets.ImageFolder(
-    #     traindir,
-    #     transforms.Compose([
-    #         transforms.RandomResizedCrop(224),
-    #         transforms.RandomHorizontalFlip(),
-    #         transforms.ToTensor(),
-    #         normalize,
-    #     ]))
     preprocess_imgs_train = [
         #augmentation.DownScale(target_resolution=(224, 224)), # width, height
-        augmentation.DownScale(target_resolution=(168, 200)),  # width, height
+        #augmentation.DownScale(target_resolution=(240, 320)),  # width, height
+        augmentation.RandomResizedCrop(target_resolution=(240, 320)),
+        augmentation.RandomRotation((0, 90, -90)),
         conversion.ToFloat(),
         conversion.TransposeImage(),
         conversion.ToTensor()
@@ -236,20 +233,18 @@ def main_worker(gpu, ngpus_per_node, args):
         train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
         num_workers=args.workers, pin_memory=True, sampler=train_sampler)
 
+    preprocess_imgs_val = [
+        # augmentation.DownScale(target_resolution=(224, 224)), # width, height
+        augmentation.DownScale(target_resolution=(240, 320)),  # width, height
+        # augmentation.RandomResizedCrop(target_resolution=(240, 320)),
+        conversion.ToFloat(),
+        conversion.TransposeImage(),
+        conversion.ToTensor()
+    ]
+
     val_dataset = our_datasets.CDIP("/scratch/Datasets/rvl-cdip/", mode="val", channels=3,
-                                      exclude_tobacco=True, preprocess=preprocess_imgs_train)
+                                      exclude_tobacco=True, preprocess=preprocess_imgs_val)
 
-
-
-    # val_loader = torch.utils.data.DataLoader(
-    #     datasets.ImageFolder(valdir, transforms.Compose([
-    #         transforms.Resize(256),
-    #         transforms.CenterCrop(224),
-    #         transforms.ToTensor(),
-    #         normalize,
-    #     ])),
-    #     batch_size=args.batch_size, shuffle=False,
-    #     num_workers=args.workers, pin_memory=True)
 
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
@@ -307,7 +302,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         target = target.cuda(args.gpu, non_blocking=True)
 
         # compute output
-        output,_,_,_ = model(input)
+        output = model(input)
         loss = criterion(output, target.squeeze())
 
         # measure accuracy and record loss
@@ -357,7 +352,7 @@ def validate(val_loader, model, criterion, args):
             target = target.cuda(args.gpu, non_blocking=True)
 
             # compute output
-            output,_,_,_ = model(input)
+            output = model(input)
             loss = criterion(output, target.squeeze())
 
             # measure accuracy and record loss
