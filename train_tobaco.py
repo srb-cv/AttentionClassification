@@ -18,6 +18,7 @@ import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
+from model1 import AttnVGG_before
 
 from Train_VGG import vgg_512fc
 from datasets.transformation import augmentation,conversion
@@ -46,7 +47,7 @@ parser.add_argument('-b', '--batch-size', default=256, type=int,
                     help='mini-batch size (default: 256), this is the total '
                          'batch size of all GPUs on the current node when '
                          'using Data Parallel or Distributed Data Parallel')
-parser.add_argument('--lr', '--learning-rate', default=0.0001, type=float,
+parser.add_argument('--lr', '--learning-rate', default=0.001, type=float,
                     metavar='LR', help='initial learning rate', dest='lr')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
@@ -78,6 +79,7 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
                          'N processes per node, which has N GPUs. This is the '
                          'fastest way to use PyTorch for either single node or '
                          'multi node data parallel training')
+parser.add_argument('--num_classes',default=1000, type=int, help='num of class in the model')
 
 best_acc1 = 0
 
@@ -141,8 +143,9 @@ def main_worker(gpu, ngpus_per_node, args):
         # print("=> creating model '{}'".format(args.arch))
         # model = models.__dict__[args.arch]()
         print("Creating VGG Model with 512FC")
-        model = vgg_512fc()
-        #model.copy_weights_vgg16()
+        #model = vgg_512fc()
+        model = AttnVGG_before(num_classes=args.num_classes, attention=True, normalize_attn=True)
+        model.copy_weights_vgg16()
 
     if args.distributed:
         # For multiprocessing distributed, DistributedDataParallel constructor
@@ -267,7 +270,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 'best_acc1': best_acc1,
                 'optimizer' : optimizer.state_dict(),
             }, is_best)
-    test(test_loader, model, criterion, args)
+    # test(test_loader, model, criterion, args)
 
 def test(val_loader, model, criterion, args):
 
@@ -287,7 +290,7 @@ def test(val_loader, model, criterion, args):
             target = target.cuda(args.gpu, non_blocking=True)
 
             # compute output
-            output = model(input)
+            output,_,_,_ = model(input)
             loss = criterion(output, target.squeeze())
 
             # measure accuracy and record loss
@@ -336,7 +339,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         target = target.cuda(args.gpu, non_blocking=True)
 
         # compute output
-        output = model(input)
+        output,_,_,_ = model(input)
         loss = criterion(output, target.squeeze())
 
         # measure accuracy and record loss
@@ -382,7 +385,7 @@ def validate(val_loader, model, criterion, args):
             target = target.cuda(args.gpu, non_blocking=True)
 
             # compute output
-            output = model(input)
+            output,_,_,_ = model(input)
             loss = criterion(output, target.squeeze())
 
             # measure accuracy and record loss
