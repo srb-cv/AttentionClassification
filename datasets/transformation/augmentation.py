@@ -3,6 +3,7 @@ import numpy as np
 import random
 import math
 import numbers
+from PIL import Image
 
 class DownScale:
     def __init__(self, target_resolution=(240, 320)):
@@ -128,3 +129,31 @@ class RandomRotation:
         return tuple(result)
 
 
+class SaltAndNoise:
+    def __init__(self, svp = 0.5, amount = 0.004):
+        self.svp = svp
+        self.amount = amount
+
+    def __call__(self, image, *args):
+        out = self.get_noise(image)
+        im_out = Image.fromarray(out)
+        im_out_gray = im_out.convert(mode='L')
+
+        return np.array(im_out_gray)
+
+    def get_noise(self, image):
+        s_vs_p = self.svp
+        amount = self.amount
+        out = np.copy(image)
+        # Salt mode
+        num_salt = np.ceil(amount * image.size * s_vs_p)
+        coords = [np.random.randint(0, i - 1, int(num_salt))
+              for i in image.shape]
+        out[coords] = 1
+
+        # Pepper mode
+        num_pepper = np.ceil(amount* image.size * (1. - s_vs_p))
+        coords = [np.random.randint(0, i - 1, int(num_pepper))
+              for i in image.shape]
+        out[coords] = 0
+        return out
