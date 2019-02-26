@@ -18,10 +18,10 @@ import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
-from model1 import AttnVGG_before
+from spatial_attention_model import AttnVGG_spatial
 import datasets as our_datasets
 from datasets.transformation import augmentation, conversion
-from Train_VGG import vgg_512fc
+#from Train_VGG import vgg_512fc
 from datasets import Tobacco
 
 
@@ -150,13 +150,13 @@ def main_worker(gpu, ngpus_per_node, args):
         # model = AttnVGG_before(num_classes=args.num_classes, attention=False, normalize_attn=False)
         # model.copy_weights_vgg16()
         if args.train_attn:
-            model = AttnVGG_before(num_classes=args.num_classes, attention=True, normalize_attn=False)
+            model = AttnVGG_spatial(num_classes=args.num_classes, attention=True, normalize_attn=False)
             model_path_to_copy_weigths = "zoo/Train_cdip_acc90_512fc/model_best.pth.tar"
             model.copy_weights_vgg16(model_path_to_copy_weigths)
 
         else:
             print("Creating VGG Model with 512FC")
-            model = vgg_512fc(num_classes=16)
+            #model = vgg_512fc(num_classes=16)
 
 
     print(model)
@@ -221,8 +221,8 @@ def main_worker(gpu, ngpus_per_node, args):
 
     preprocess_imgs_train = [
         #augmentation.DownScale(target_resolution=(224, 224)), # width, height
-        #augmentation.DownScale(target_resolution=(240, 320)),  # width, height
-        augmentation.RandomResizedCrop(target_resolution=(240, 320)),
+        augmentation.DownScale(target_resolution=(240, 320)),  # width, height
+        #augmentation.RandomResizedCrop(target_resolution=(240, 320)),
         augmentation.RandomRotation((0, 90, -90)),
         conversion.ToFloat(),
         conversion.TransposeImage(),
@@ -354,7 +354,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
                    epoch, i, len(train_loader), batch_time=batch_time,
                    data_time=data_time, loss=losses, top1=top1, top5=top5))
 
-        if(i==1590):
+        if(i==129):
             break
 
 

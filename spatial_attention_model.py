@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from blocks import ConvBlock, LinearAttentionBlock, ProjectorBlock
+from blocks import ConvBlock, SpatialAttentionBlock, ProjectorBlock
 from initialize import *
 from torchvision import models
 import torch.nn as nn
@@ -13,9 +13,9 @@ attention after max-pooling
 
 
 
-class AttnVGG_before(nn.Module):
+class AttnVGG_spatial(nn.Module):
     def __init__(self, num_classes, attention=True, normalize_attn=True, init='default', reduced_attention = False):
-        super(AttnVGG_before, self).__init__()
+        super(AttnVGG_spatial, self).__init__()
         self.attention = attention
         self.reduced_attention = reduced_attention
         self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
@@ -40,9 +40,9 @@ class AttnVGG_before(nn.Module):
         # Projectors & Compatibility functions
         if self.attention:
             self.projector = ProjectorBlock(256, 512)
-            self.attn1 = LinearAttentionBlock(in_features=512, normalize_attn=normalize_attn)
-            self.attn2 = LinearAttentionBlock(in_features=512, normalize_attn=normalize_attn)
-            self.attn3 = LinearAttentionBlock(in_features=512, normalize_attn=normalize_attn)
+            self.attn1 = SpatialAttentionBlock(in_features=512, normalize_attn=normalize_attn)
+            self.attn2 = SpatialAttentionBlock(in_features=512, normalize_attn=normalize_attn)
+            self.attn3 = SpatialAttentionBlock(in_features=512, normalize_attn=normalize_attn)
         # final classification layer
         if self.attention and not reduced_attention:
             self.classify = nn.Linear(in_features=512 * 3, out_features=num_classes, bias=True)
@@ -74,26 +74,6 @@ class AttnVGG_before(nn.Module):
                     nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
-        # feed forward
-        # l4 = self.conv_block1(x)
-        # x = F.max_pool2d(l4, kernel_size=2, stride=2, padding=0)  # /2
-        # l5 = self.conv_block2(x)
-        # x = F.max_pool2d(l5, kernel_size=2, stride=2, padding=0)  # /2
-        # l1 = self.conv_block3(x)  # /1
-        # x = F.max_pool2d(l1, kernel_size=2, stride=2, padding=0)  # /2
-        # l2 = self.conv_block4(x)  # /2
-        # x = F.max_pool2d(l2, kernel_size=2, stride=2, padding=0)  # /4
-        # l3 = self.conv_block5(x)  # /4
-        # x = F.max_pool2d(l3, kernel_size=2, stride=2, padding=0)  # /8
-        # #         x = self.conv_block6(x) # /32
-        # x = self.avgpool(x)
-        # x = x.view(x.size(0), -1)
-        #
-        # f1 = self.dense1(x)  # batch_sizex512x1x1
-        # f2 = self.dense2(f1)
-        # g = self.dense3(f2)
-        #g=f2
-
         x = self.conv_block1(x)
         l1 = F.max_pool2d(x, kernel_size=2, stride=2, padding=0)  # /2
         x = self.conv_block2(l1)
@@ -218,7 +198,7 @@ class AttnVGG_before(nn.Module):
 
     def copy_weights_no_attn_vgg16(self, model_path_to_copy_weigths):
         # model = models.vgg16_bn(pretrained=True)
-        model = AttnVGG_before(num_classes=10, attention=False, normalize_attn=False, reduced_attention=True)
+        model = AttnVGG_spatial(num_classes=10, attention=False, normalize_attn=False, reduced_attention=True)
         model = self.load_weight(model, model_path_to_copy_weigths)
 
         for l1, l2 in zip(model.conv_block1.op, self.conv_block1.op):
@@ -304,5 +284,3 @@ class AttnVGG_before(nn.Module):
             'state_dict'].items()}
         model.load_state_dict(new_dict)
         return model
-
-

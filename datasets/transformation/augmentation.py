@@ -99,7 +99,7 @@ class RandomRotation:
         Returns:
             sequence: params to be passed to ``rotate`` for random rotation.
         """
-        angle = np.random.choice(degrees, p = [0.7, 0.15, 0.15])
+        angle = np.random.choice(degrees, p = [0.5, 0.25, 0.25])
 
         return angle
 

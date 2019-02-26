@@ -19,10 +19,9 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
 from model1 import AttnVGG_before
-
-from Train_VGG import vgg_512fc
 from datasets.transformation import augmentation,conversion
 from datasets import Tobacco
+from Train_VGG import vgg_attn_from_cdip
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -142,10 +141,13 @@ def main_worker(gpu, ngpus_per_node, args):
     else:
         # print("=> creating model '{}'".format(args.arch))
         # model = models.__dict__[args.arch]()
-        print("Creating VGG Model with 512FC")
-        #model = vgg_512fc()
-        model = AttnVGG_before(num_classes=args.num_classes, attention=True, normalize_attn=False)
-        model.copy_weights_vgg16()
+        # print("Creating VGG Model with 512FC")
+        model = AttnVGG_before(num_classes=args.num_classes, attention=True, normalize_attn=False,reduced_attention=True)
+        model.copy_weights_no_attn_vgg16("zoo/tobacco_testacc90_fc_onlyRotations/model_best.pth.tar")
+        # print("Copying from cdip trained Attn")
+        #model = vgg_attn_from_cdip(num_classes=10, resume_path='zoo/tobacco_testacc90_fc_onlyRotations/model_best.pth.tar')
+
+    print(model)
 
     if args.distributed:
         # For multiprocessing distributed, DistributedDataParallel constructor
@@ -208,29 +210,38 @@ def main_worker(gpu, ngpus_per_node, args):
     # normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
     #                                  std=[0.229, 0.224, 0.225])
 
-    # target_width, target_height = 240, 320
-    target_width, target_height = 224, 224
+    target_width, target_height = 240, 320
+    # target_width, target_height = 224, 224
 
-    preprocess_imgs = [
+    preprocess_train_imgs = [
+        augmentation.DownScale(target_resolution=(target_width, target_height)),
+        #augmentation.RandomResizedCrop(target_resolution=(240, 320)),
+        augmentation.RandomRotation((0, 90, -90)),
+        conversion.ToFloat(),
+        conversion.TransposeImage(),
+        conversion.ToTensor()
+    ]
+
+    tobacco_train = Tobacco(args.data, channels=3, preprocess=preprocess_train_imgs)
+    tobacco_train.load_split("train")
+    #print(len(tobacco))
+    train_loader = torch.utils.data.DataLoader(tobacco_train, batch_size=32, shuffle=True,
+                                         num_workers=8, drop_last=True, pin_memory=True)
+
+    preprocess_val_imgs = [
         augmentation.DownScale(target_resolution=(target_width, target_height)),
         conversion.ToFloat(),
         conversion.TransposeImage(),
         conversion.ToTensor()
     ]
 
-    tobacco_train = Tobacco(args.data, channels=3, preprocess=preprocess_imgs)
-    tobacco_train.load_split("train")
-    #print(len(tobacco))
-    train_loader = torch.utils.data.DataLoader(tobacco_train, batch_size=32, shuffle=True,
-                                         num_workers=8, drop_last=True, pin_memory=True)
-
-    tobacco_val = Tobacco(args.data, channels=3, preprocess=preprocess_imgs)
+    tobacco_val = Tobacco(args.data, channels=3, preprocess=preprocess_val_imgs)
     tobacco_val.load_split("val")
     #print(len(tobacco))
     val_loader = torch.utils.data.DataLoader(tobacco_val, batch_size=32, shuffle=False,
                                          num_workers=8, drop_last=True, pin_memory=True)
 
-    tobacco_test = Tobacco(args.data, channels=3, preprocess=preprocess_imgs)
+    tobacco_test = Tobacco(args.data, channels=3, preprocess=preprocess_val_imgs)
     tobacco_test.load_split("test")
     # print(len(tobacco))
     test_loader = torch.utils.data.DataLoader(tobacco_test, batch_size=32, shuffle=False,
@@ -238,7 +249,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
 
     if args.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(tobacco)
+        train_sampler = torch.utils.data.distributed.DistributedSampler(tobacco_train)
     else:
         train_sampler = None
 
@@ -270,9 +281,13 @@ def main_worker(gpu, ngpus_per_node, args):
                 'best_acc1': best_acc1,
                 'optimizer' : optimizer.state_dict(),
             }, is_best)
-    # test(test_loader, model, criterion, args)
 
-def test(val_loader, model, criterion, args):
+    for i in range(10):
+        tobacco_test.load_split("test", i)
+        test_acc =test(test_loader, model, criterion, args)
+        print("Test accuracy obtained after Training Epochs", test_acc)
+
+def test(test_loader, model, criterion, args):
 
     batch_time = AverageMeter()
     losses = AverageMeter()
@@ -284,7 +299,7 @@ def test(val_loader, model, criterion, args):
 
     with torch.no_grad():
         end = time.time()
-        for i, (input, target) in enumerate(val_loader):
+        for i, (input, target) in enumerate(test_loader):
             if args.gpu is not None:
                 input = input.cuda(args.gpu, non_blocking=True)
             target = target.cuda(args.gpu, non_blocking=True)
@@ -309,7 +324,7 @@ def test(val_loader, model, criterion, args):
                       'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
                       'Acc@1 {top1.val:.3f} ({top1.avg:.3f})\t'
                       'Acc@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
-                    i, len(val_loader), batch_time=batch_time, loss=losses,
+                    i, len(test_loader), batch_time=batch_time, loss=losses,
                     top1=top1, top5=top5))
 
         print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'

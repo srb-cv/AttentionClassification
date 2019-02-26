@@ -43,6 +43,29 @@ class LinearAttentionBlock(nn.Module):
             g = F.adaptive_avg_pool2d(g, (1,1)).view(N,C)
         return c.view(N,1,W,H), g
 
+
+
+class SpatialAttentionBlock(nn.Module):
+    def __init__(self, in_features, normalize_attn=True):
+        super(SpatialAttentionBlock, self).__init__()
+        self.normalize_attn = normalize_attn
+        # self.op = nn.Conv2d(in_channels=in_features, out_channels=1, kernel_size=1, padding=0, bias=False)
+    def forward(self, l, g):
+        N, C, W, H = l.size()
+        c = l+g # batch_sizex1xWxH
+        c = F.adaptive_avg_pool2d(g, (1,1)).view(N, C)
+        if self.normalize_attn:
+            a = F.softmax(c, dim=1).view(N, C)
+        else:
+            a = torch.sigmoid(c)
+        a = a.unsqueeze(2).unsqueeze(2)
+        g = torch.mul(a, l)   # batch_sizexCxWxH
+        if self.normalize_attn:
+            g = g.view(N,C,-1).sum(dim=2) # batch_sizexC
+        else:
+            g = F.adaptive_avg_pool2d(g, (1,1)).view(N,C)
+        return c, g
+
 '''
 Grid attention block
 
