@@ -135,25 +135,33 @@ class SaltAndNoise:
         self.amount = amount
 
     def __call__(self, image, *args):
-        out = self.get_noise(image)
-        im_out = Image.fromarray(out)
-        im_out_gray = im_out.convert(mode='L')
 
-        return np.array(im_out_gray)
+        SNtImage = self.add_salt_pepper_noise(image)
+        result = [SNtImage]
 
-    def get_noise(self, image):
-        s_vs_p = self.svp
-        amount = self.amount
-        out = np.copy(image)
-        # Salt mode
-        num_salt = np.ceil(amount * image.size * s_vs_p)
-        coords = [np.random.randint(0, i - 1, int(num_salt))
-              for i in image.shape]
-        out[coords] = 1
+        if args is None:
+            return result
+        elif len(args) == 1:
+            result.append((args[0]))
+        else:
+            for arg in args:
+                result.append(arg)
 
-        # Pepper mode
-        num_pepper = np.ceil(amount* image.size * (1. - s_vs_p))
-        coords = [np.random.randint(0, i - 1, int(num_pepper))
-              for i in image.shape]
-        out[coords] = 0
-        return out
+        return tuple(result)
+
+
+    def add_salt_pepper_noise(self, X_img):
+        row, col, _ = X_img.shape
+        salt_vs_pepper = 0.2
+        amount = 0.004
+        num_salt = np.ceil(amount * X_img.size * salt_vs_pepper)
+        num_pepper = np.ceil(amount * X_img.size * (1.0 - salt_vs_pepper))
+
+        # Add Salt noise
+        coords = [np.random.randint(0, i - 1, int(num_salt)) for i in X_img.shape]
+        X_img[coords[0], coords[1], :] = 1
+
+        # Add Pepper noise
+        coords = [np.random.randint(0, i - 1, int(num_pepper)) for i in X_img.shape]
+        X_img[coords[0], coords[1], :] = 0
+        return X_img
