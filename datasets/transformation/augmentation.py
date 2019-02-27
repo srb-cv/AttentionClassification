@@ -4,6 +4,7 @@ import random
 import math
 import numbers
 
+
 class DownScale:
     def __init__(self, target_resolution=(240, 320)):
         super().__init__()
@@ -99,7 +100,7 @@ class RandomRotation:
         Returns:
             sequence: params to be passed to ``rotate`` for random rotation.
         """
-        angle = np.random.choice(degrees, p = [0.5, 0.25, 0.25])
+        angle = np.random.choice(degrees, p = [0.8, 0.1, 0.1])
 
         return angle
 
@@ -128,3 +129,39 @@ class RandomRotation:
         return tuple(result)
 
 
+class SaltAndNoise:
+    def __init__(self, svp = 0.5, amount = 0.004):
+        self.svp = svp
+        self.amount = amount
+
+    def __call__(self, image, *args):
+
+        SNtImage = self.add_salt_pepper_noise(image)
+        result = [SNtImage]
+
+        if args is None:
+            return result
+        elif len(args) == 1:
+            result.append((args[0]))
+        else:
+            for arg in args:
+                result.append(arg)
+
+        return tuple(result)
+
+
+    def add_salt_pepper_noise(self, X_img):
+        row, col, _ = X_img.shape
+        salt_vs_pepper = 0.2
+        amount = 0.004
+        num_salt = np.ceil(amount * X_img.size * salt_vs_pepper)
+        num_pepper = np.ceil(amount * X_img.size * (1.0 - salt_vs_pepper))
+
+        # Add Salt noise
+        coords = [np.random.randint(0, i - 1, int(num_salt)) for i in X_img.shape]
+        X_img[coords[0], coords[1], :] = 1
+
+        # Add Pepper noise
+        coords = [np.random.randint(0, i - 1, int(num_pepper)) for i in X_img.shape]
+        X_img[coords[0], coords[1], :] = 0
+        return X_img

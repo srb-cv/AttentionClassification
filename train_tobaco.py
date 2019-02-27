@@ -21,7 +21,7 @@ import torchvision.models as models
 from model1 import AttnVGG_before
 from datasets.transformation import augmentation,conversion
 from datasets import Tobacco
-from Train_VGG import vgg_attn_from_cdip
+from Train_VGG import vgg_spatial_attn_from_cdip
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -142,10 +142,10 @@ def main_worker(gpu, ngpus_per_node, args):
         # print("=> creating model '{}'".format(args.arch))
         # model = models.__dict__[args.arch]()
         # print("Creating VGG Model with 512FC")
-        model = AttnVGG_before(num_classes=args.num_classes, attention=True, normalize_attn=False,reduced_attention=True)
-        model.copy_weights_no_attn_vgg16("zoo/tobacco_testacc90_fc_onlyRotations/model_best.pth.tar")
-        # print("Copying from cdip trained Attn")
-        #model = vgg_attn_from_cdip(num_classes=10, resume_path='zoo/tobacco_testacc90_fc_onlyRotations/model_best.pth.tar')
+        #model = AttnVGG_before(num_classes=args.num_classes, attention=True, normalize_attn=False,reduced_attention=True)
+        #model.copy_weights_no_attn_vgg16("zoo/tobacco_testacc90_fc_onlyRotations/model_best.pth.tar")
+        print("Copying from cdip trained Attn")
+        model = vgg_spatial_attn_from_cdip(num_classes=16, resume_path='zoo/acc_88_attn_cvdip/model_best.pth.tar')
 
     print(model)
 
@@ -217,14 +217,15 @@ def main_worker(gpu, ngpus_per_node, args):
         augmentation.DownScale(target_resolution=(target_width, target_height)),
         #augmentation.RandomResizedCrop(target_resolution=(240, 320)),
         augmentation.RandomRotation((0, 90, -90)),
+        augmentation.SaltAndNoise(),
         conversion.ToFloat(),
         conversion.TransposeImage(),
         conversion.ToTensor()
     ]
 
     tobacco_train = Tobacco(args.data, channels=3, preprocess=preprocess_train_imgs)
-    tobacco_train.load_split("train")
-    #print(len(tobacco))
+    tobacco_train.load_split("train", 1)
+    print(len(tobacco_train))
     train_loader = torch.utils.data.DataLoader(tobacco_train, batch_size=32, shuffle=True,
                                          num_workers=8, drop_last=True, pin_memory=True)
 
@@ -236,14 +237,15 @@ def main_worker(gpu, ngpus_per_node, args):
     ]
 
     tobacco_val = Tobacco(args.data, channels=3, preprocess=preprocess_val_imgs)
-    tobacco_val.load_split("val")
+    tobacco_val.load_split("val", 1)
+    print(len(tobacco_val))
     #print(len(tobacco))
     val_loader = torch.utils.data.DataLoader(tobacco_val, batch_size=32, shuffle=False,
                                          num_workers=8, drop_last=True, pin_memory=True)
 
     tobacco_test = Tobacco(args.data, channels=3, preprocess=preprocess_val_imgs)
-    tobacco_test.load_split("test")
-    # print(len(tobacco))
+    tobacco_test.load_split("test", 1)
+    print(len(tobacco_test))
     test_loader = torch.utils.data.DataLoader(tobacco_test, batch_size=32, shuffle=False,
                                              num_workers=8, drop_last=True, pin_memory=True)
 
@@ -254,6 +256,8 @@ def main_worker(gpu, ngpus_per_node, args):
         train_sampler = None
 
     if args.evaluate:
+        test_acc = test(test_loader, model, criterion, args)
+        print("Test accuracy obtained after Training Epochs", test_acc)
         validate(val_loader, model, criterion, args)
         return
 
@@ -428,7 +432,7 @@ def validate(val_loader, model, criterion, args):
     return top1.avg
 
 
-def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, filename='checkpoint91.pth.tar'):
     torch.save(state, filename)
     if is_best:
         shutil.copyfile(filename, 'model_best.pth.tar')

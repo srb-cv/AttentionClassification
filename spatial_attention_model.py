@@ -23,6 +23,8 @@ class AttnVGG_spatial(nn.Module):
         self.conv_block1 = ConvBlock(3, 64, 2)
         self.conv_block2 = ConvBlock(64, 128, 2)
         self.conv_block3 = ConvBlock(128, 256, 3)
+        for param in self.parameters():
+            param.requires_grad = False
         self.conv_block4 = ConvBlock(256, 512, 3)
         self.conv_block5 = ConvBlock(512, 512, 3)
         #         self.conv_block6 = ConvBlock(512, 512, 2, pool=True)
@@ -33,8 +35,6 @@ class AttnVGG_spatial(nn.Module):
         self.dense2= nn.Linear(in_features=4096, out_features=4096, bias=True)
         self.dense3 = nn.Linear(in_features=4096, out_features=512, bias=True)
 
-        for param in self.parameters():
-            param.requires_grad = False
 
 
         # Projectors & Compatibility functions

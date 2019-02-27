@@ -60,6 +60,7 @@ class Tobacco(Dataset):
                 np.random.seed(self.random_state + i)
                 np.random.shuffle(samples)
                 for sample in samples[:int(self.num_train * self.train_val_ratio)]:
+                #for sample in samples[:int(self.num_train)]:
                     split["train"].append((sample, j))
                 for sample in samples[int(self.num_train * self.train_val_ratio):self.num_train]:
                     split["val"].append((sample, j))

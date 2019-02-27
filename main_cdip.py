@@ -271,7 +271,9 @@ def main_worker(gpu, ngpus_per_node, args):
 
 
     if args.evaluate:
-        validate(val_loader, model, criterion, args)
+        #validate(val_loader, model, criterion, args)
+        test_acc = test(test_loader, model, criterion, args)
+        print("Avd test accuracy", test_acc)
         return
 
     for epoch in range(args.start_epoch, args.epochs):
@@ -456,7 +458,7 @@ def test(test_loader, model, criterion, args):
     return top1.avg
 
 
-def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, filename='checkpoint91.pth.tar'):
     torch.save(state, filename)
     if is_best:
         shutil.copyfile(filename, 'model_best.pth.tar')

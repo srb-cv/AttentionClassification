@@ -22,16 +22,17 @@ def vgg_512fc(num_classes):
 
 def vgg_attn_from_cdip(num_classes, resume_path):
     import model1
-    model = model1.AttnVGG_before(num_classes=10, attention=True, normalize_attn=False)
+    model = model1.AttnVGG_before(num_classes=num_classes, attention=True, normalize_attn=False)
     checkpoint = torch.load(resume_path)
     state_dict = {str.replace(k, 'module.', ''): v for k, v in checkpoint[
         'state_dict'].items()}
     model.load_state_dict(state_dict)
-    model.classify = nn.Linear(in_features=512 * 3, out_features=num_classes, bias=True)
+    model.classify = nn.Linear(in_features=512 * 3, out_features=10, bias=True)
     return model
 
 
 def vgg_non_attn_from_tobacco(num_classes, resume_path):
+    import model1
     model = model1.AttnVGG_before(num_classes=10, attention=False, normalize_attn=False)
     checkpoint = torch.load(resume_path)
     state_dict = {str.replace(k, 'module.', ''): v for k, v in checkpoint[
@@ -40,3 +41,12 @@ def vgg_non_attn_from_tobacco(num_classes, resume_path):
     model.classify = nn.Linear(in_features=512 * 3, out_features=num_classes, bias=True)
     return model
 
+def vgg_spatial_attn_from_cdip(num_classes, resume_path):
+    import spatial_attention_model
+    model = spatial_attention_model.AttnVGG_spatial(num_classes=num_classes, attention=True, normalize_attn=False)
+    checkpoint = torch.load(resume_path)
+    state_dict = {str.replace(k, 'module.', ''): v for k, v in checkpoint[
+        'state_dict'].items()}
+    model.load_state_dict(state_dict)
+    model.classify = nn.Linear(in_features=512 * 3, out_features=10, bias=True)
+    return model
