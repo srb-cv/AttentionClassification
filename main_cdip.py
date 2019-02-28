@@ -21,7 +21,7 @@ import torchvision.models as models
 from spatial_attention_model import AttnVGG_spatial
 import datasets as our_datasets
 from datasets.transformation import augmentation, conversion
-#from Train_VGG import vgg_512fc
+from Train_VGG import vgg_512fc,vgg_13_rvl
 from datasets import Tobacco
 
 
@@ -39,16 +39,16 @@ parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet18',
                         ' (default: resnet18)')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
-parser.add_argument('--epochs', default=90, type=int, metavar='N',
+parser.add_argument('--epochs', default=10, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('-b', '--batch-size', default=256, type=int,
+parser.add_argument('-b', '--batch-size', default=15, type=int,
                     metavar='N',
                     help='mini-batch size (default: 256), this is the total '
                          'batch size of all GPUs on the current node when '
                          'using Data Parallel or Distributed Data Parallel')
-parser.add_argument('--lr', '--learning-rate', default=0.1, type=float,
+parser.add_argument('--lr', '--learning-rate', default=0.001, type=float,
                     metavar='LR', help='initial learning rate', dest='lr')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
@@ -81,8 +81,9 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
                          'fastest way to use PyTorch for either single node or '
                          'multi node data parallel training')
 parser.add_argument('--num_classes',default=16, type=int, help='num of class in the model')
-parser.add_argument('--train_attn', dest='train_attn', action='store_true',
-                    help='Train the model with Attn')
+# parser.add_argument('--train_attn', default='train_attn', action='store_true',
+#                     help='Train the model with Attn')
+parser.add_argument('--train_attn', default=None, action='store_true',help='Train the model with Attn')
 
 best_acc1 = 0
 
@@ -155,7 +156,8 @@ def main_worker(gpu, ngpus_per_node, args):
             model.copy_weights_vgg16(model_path_to_copy_weigths)
 
         else:
-            print("Creating VGG Model with 512FC")
+            print("Creating VGG Model with VGG13")
+            model = vgg_13_rvl(num_classes=16)
             #model = vgg_512fc(num_classes=16)
 
 
@@ -220,8 +222,8 @@ def main_worker(gpu, ngpus_per_node, args):
     #                                  std=[0.229, 0.224, 0.225])
 
     preprocess_imgs_train = [
-        #augmentation.DownScale(target_resolution=(224, 224)), # width, height
-        augmentation.DownScale(target_resolution=(240, 320)),  # width, height
+        #augmentation.DownScale(target_resolution=(240, 320)), # width, height
+        augmentation.DownScale(target_resolution=(400, 600)),  # width, height
         #augmentation.RandomResizedCrop(target_resolution=(240, 320)),
         augmentation.RandomRotation((0, 90, -90)),
         conversion.ToFloat(),
@@ -271,7 +273,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
 
     if args.evaluate:
-        #validate(val_loader, model, criterion, args)
+        validate(val_loader, model, criterion, args)
         test_acc = test(test_loader, model, criterion, args)
         print("Avd test accuracy", test_acc)
         return
@@ -356,7 +358,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
                    epoch, i, len(train_loader), batch_time=batch_time,
                    data_time=data_time, loss=losses, top1=top1, top5=top5))
 
-        if(i==129):
+        if(i == 21310):
             break
 
 
