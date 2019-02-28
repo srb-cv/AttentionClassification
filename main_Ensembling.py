@@ -316,12 +316,6 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        # if args.gpu is not None:
-        #     print(args.gpu)
-        #     header = header.cuda(args.gpu, non_blocking=True)
-        #     footer = footer.cuda(args.gpu, non_blocking=True)
-        # target = target.cuda(args.gpu, non_blocking=True)
-
         use_cuda = torch.cuda.is_available()
         header = header.cuda(args.gpu, non_blocking=True)
         footer = footer.cuda(args.gpu, non_blocking=True)
